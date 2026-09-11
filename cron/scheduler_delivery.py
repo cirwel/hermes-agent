@@ -1645,17 +1645,21 @@ def _unresolved_delivery_outcome(job: dict, for_failure: bool) -> Optional[str]:
     if deliver_value == "local":
         return None
     if deliver_value == "origin":
-        logger.info(
-            # deliver=origin with no resolvable origin and no configured home channels: treat as local
-            # rather than reporting an error. CLI-created jobs never capture a {platform, chat_id} origin,
-            # so failing here would make every CLI `deliver=origin` (or auto-detect) job emit a spurious "no
-            # delivery target resolved" error on every run (#43014). The output is still persisted in
-            # last_output for `cron list`/resume.
-            "Job '%s': deliver=origin but no origin or home channels — "
-            "skipping delivery (output saved in last_output)",
-            job.get("name", job.get("id", "?")))
-        return None
-    msg = f"no delivery target resolved for deliver={deliver_value}"
+        # Two shapes reach here and they mean different things. A truthy non-dict
+        # origin is legacy CLI/TUI provenance — a free-form string recording the
+        # local session, never a gateway channel — so staying silent is correct
+        # and keeps #43014's spurious-error fix intact. A missing origin is not
+        # that: delivery was asked for and nothing resolved, which has to surface.
+        # Reporting both as clean made deliver=origin jobs look successful while
+        # their findings only ever reached the output directory on disk.
+        raw_origin = job.get("origin")
+        if raw_origin and not isinstance(raw_origin, dict):
+            logger.info(
+                "Job '%s': deliver=origin has non-gateway origin provenance — "
+                "skipping delivery (output saved locally)",
+                job.get("name", job.get("id", "?")))
+            return None
+    msg = f"no delivery target resolved for deliver={deliver_value} (output saved locally only)"
     logger.warning("Job '%s': %s", job["id"], msg)
     return msg
 

@@ -215,9 +215,33 @@ def _job_rows(job: Dict[str, Any]) -> List[tuple[str, str]]:
     ] + [(label, value) for label, value in optional if value]
 
 
+def _unresolved_delivery_warning(job: Dict[str, Any]) -> Optional[str]:
+    """Warn in ``cron list`` when a non-local job has no resolvable delivery target.
+
+    Such a job runs and saves output, but nothing leaves the machine. Without this
+    the only signal is a delivery error after the fact, so a job can sit for weeks
+    looking scheduled and healthy while every result stays on disk.
+    """
+    try:
+        from importlib import import_module
+
+        scheduler = import_module("cron.scheduler_delivery")
+        deliver_value = scheduler._normalize_deliver_value(job.get("deliver", "local"))
+        if deliver_value == "local" or scheduler._resolve_delivery_targets(job):
+            return None
+    except Exception:
+        # Listing stays best-effort: a failed import or config lookup must not break
+        # `cron list`. The scheduler still records the real error at run time.
+        return None
+    return (f"{color('⚠ Delivery unresolved:', Colors.YELLOW)} deliver={deliver_value} "
+            "resolves to no target — local-only until one is configured")
+
+
 def _job_warnings(job: Dict[str, Any]) -> List[str]:
     """Delivery / fire warning lines for one job in ``cron list``."""
     lines = []
+    if unresolved := _unresolved_delivery_warning(job):
+        lines.append(unresolved)
     if queued := job.get("last_delivery_queued"):
         lines.append(f"Delivery queued (completion unverified; do not resend): {queued}")
     if job.get("last_delivery_error"):
