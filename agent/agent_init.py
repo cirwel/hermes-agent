@@ -378,11 +378,16 @@ def _resolve_api_mode(agent, api_mode, provider_name, base_url):
         agent.api_mode = "chat_completions"
     elif api_mode in _EXPLICIT_API_MODES:
         agent.api_mode = api_mode
-    elif agent.provider in {"openai-codex", "xai", "xai-oauth"}:
-        agent.api_mode = "codex_responses"
-    elif provider_name is None and host == "chatgpt.com" and "/backend-api/codex" in url:
+    elif host == "chatgpt.com" and "/backend-api/codex" in url:
+        # A Codex OAuth base URL is a stronger runtime signal than the provider
+        # label, which can be stale: carried in from config, or handed down by a
+        # parent/auxiliary client that resolved a different route. Ranking the
+        # label first sent a live Codex endpoint down the wrong wire. Explicit
+        # api_mode still wins, one rung above.
         agent.api_mode = "codex_responses"
         agent.provider = "openai-codex"
+    elif agent.provider in {"openai-codex", "xai", "xai-oauth"}:
+        agent.api_mode = "codex_responses"
     elif provider_name is None and host == "api.x.ai":
         agent.api_mode = "codex_responses"
         agent.provider = "xai"
