@@ -30,11 +30,20 @@ jobs:
         with:
           fetch-depth: 0
           ref: cirwel-runtime
+          # GITHUB_TOKEN is a GitHub App token, and GitHub refuses any ref update
+          # from one that creates or updates a file under .github/workflows/.
+          # Upstream touches its own workflows regularly, so every mirror push
+          # was rejected and this job failed silently every day from 2026-08-21
+          # until 2026-09-10. UPSTREAM_SYNC_TOKEN is a fine-grained PAT carrying
+          # the Workflows permission; the fallback keeps the job running (and
+          # still failing on workflow-file syncs) if the secret is ever absent.
+          token: ${{ secrets.UPSTREAM_SYNC_TOKEN || github.token }}
+          persist-credentials: true
 
       - name: Mirror upstream and maintain the integration PR
         id: sync
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN || github.token }}
         run: |
           set -euo pipefail
 
