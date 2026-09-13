@@ -18,6 +18,10 @@ def evaluate(tmp_path):
     # and GitHub output, not a second implementation of the decision logic.
     workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     gate = workflow["jobs"]["all-checks-pass"]
+    # Every reusable check must feed the aggregate; otherwise its failure
+    # can stay invisible to the single branch-protection check.
+    checks = {name for name, job in workflow["jobs"].items() if "uses" in job}
+    assert checks <= set(gate["needs"]), f"Checks missing from aggregate: {checks - set(gate['needs'])}"
     step = next(step for step in gate["steps"] if step.get("id") == "evaluate")
 
     def run(results):
@@ -46,12 +50,13 @@ def test_completed_or_intentionally_skipped_lanes_pass(evaluate, result):
     assert process.returncode == 0, process.stdout + process.stderr
 
 
+@pytest.mark.parametrize("job", ["detect", "tests", "infographic-check"])
 @pytest.mark.parametrize(
     "result",
     ["failure", "cancelled", "timed_out", "action_required", "neutral", "unknown", "", None],
 )
-def test_any_unacceptable_dependency_blocks_the_gate(evaluate, result):
-    process = evaluate({"detect": "success", "tests": result, "docs-site": "skipped"})
+def test_any_unacceptable_dependency_blocks_the_gate(evaluate, job, result):
+    process = evaluate({"detect": "success", "docs-site": "skipped", job: result})
     assert process.returncode != 0, process.stdout + process.stderr
     assert "::error::" in process.stdout
-    assert "tests" in process.stdout
+    assert job in process.stdout
